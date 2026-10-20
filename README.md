@@ -117,6 +117,16 @@ The selectable ID is **`strata-deepseek/deepseek-v4.1-flash-1017`**, with `fast`
 8,192-token output cap and input limited to 516,088 for the native safety margin.
 No personal OpenCode configuration or backup is included here.
 
+### OpenCode in use
+
+![Strata monitor during an OpenCode session, generating a read tool call](docs/images/opencode-strata-monitor.png)
+
+Captured on 2026-10-20 while generating a `read` tool call. The completed request
+shown used **51,487 prompt tokens** and **93 output tokens**, with **654 tokens/s
+prefill**, **62.9 tokens/s decode** and **100% VRAM expert hit rate**. The monitor
+shows **185.1 GB VRAM used** across both GPUs. This is an observed request, not a
+controlled throughput benchmark.
+
 ## Docker
 
 ```bash
