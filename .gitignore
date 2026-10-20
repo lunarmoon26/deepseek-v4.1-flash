@@ -1,0 +1,9 @@
+Strata/
+Strata-data/
+logs/
+__pycache__/
+.env
+.env.*
+!.env.example
+.venv/
+.pytest_cache/
