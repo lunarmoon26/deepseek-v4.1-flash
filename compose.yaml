@@ -15,7 +15,7 @@ services:
       DS41_CUDA_VISIBLE_DEVICES: ${DS41_CUDA_VISIBLE_DEVICES:-0,1}
       DS41_TELEMETRY_GPUS: ${DS41_TELEMETRY_GPUS:-0,1}
       DS41_PORT: "8081"
-      DS41_SPEC: ${DS41_SPEC:-none}
+      DS41_SPEC: ${DS41_SPEC:-dspark}
       DS41_PARALLEL: ${DS41_PARALLEL:-1}
     devices:
       - nvidia.com/gpu=0

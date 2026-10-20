@@ -58,17 +58,24 @@ class LauncherTests(unittest.TestCase):
                 f'from pathlib import Path; Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:]))\' '
                 f'"{receipt}" "$@"\n')
             result = subprocess.run(["bash", str(root / "install.sh")], env={**os.environ,
-                                    "DS41_PYTHON": sys.executable, "DS41_CUDA_VISIBLE_DEVICES": "1,0",
-                                    "DS41_ENGINE": str(root / "engine")}, capture_output=True)
+                                     "DS41_PYTHON": sys.executable, "DS41_CUDA_VISIBLE_DEVICES": "1,0",
+                                     "DS41_SPEC": "",
+                                     "DS41_ENGINE": str(root / "engine")}, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             args = json.loads(receipt.read_text())
             for flag, value in (("--family", "deepseek"), ("--model", "1017-EXL3-2.7BPW"),
                                 ("--gpus", "1,0"), ("--log-dir", str(root / "logs")),
-                                ("--ds41-engine", str(root / "engine"))):
+                                ("--ds41-engine", str(root / "engine")),
+                                ("--parallelism", "layer"), ("--spec", "dspark")):
                 self.assertEqual(args[args.index(flag) + 1], value)
             self.assertIn("--configure-only", args)
             self.assertIn("--no-start", args)
             self.assertFalse((root / "Strata/strata-deepseek-1017.json").exists())
+            subprocess.run(["bash", str(root / "install.sh")], env={**os.environ,
+                           "DS41_PYTHON": sys.executable, "DS41_SPEC": "none"},
+                           capture_output=True, check=True)
+            args = json.loads(receipt.read_text())
+            self.assertEqual(args[args.index("--spec") + 1], "none")
 
     def test_start_requires_install_and_delegates_without_python(self):
         with tempfile.TemporaryDirectory() as d:

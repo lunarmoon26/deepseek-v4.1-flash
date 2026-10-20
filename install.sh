@@ -11,7 +11,7 @@ args=(--family deepseek --model 1017-EXL3-2.7BPW --configure-only
   --data-dir "${STRATA_DATA_DIR:-$ROOT/Strata-data}" --log-dir "$ROOT/logs"
   --gpus "${DS41_CUDA_VISIBLE_DEVICES:-${CUDA_VISIBLE_DEVICES:-0,1}}"
   --telemetry-gpus "${DS41_TELEMETRY_GPUS:-0,1}"
-  --port "${DS41_PORT:-8081}" --spec "${DS41_SPEC:-none}"
+  --port "${DS41_PORT:-8081}" --parallelism layer --spec "${DS41_SPEC:-dspark}"
   --parallel "${DS41_PARALLEL:-1}" --context 524288 --no-start --no-browser)
 if [[ -n "${DS41_ENGINE:-}" ]]; then args+=(--ds41-engine "$DS41_ENGINE"); fi
 exec bash "$ROOT/Strata/setup.sh" "${args[@]}" "$@"

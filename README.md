@@ -10,6 +10,8 @@ deployment repository. Model-specific settings are not copied from Qwen.
   `22205b9aff07ae7b999d466aaf96446c20f4ea97`.
 - Two RTX PRO 6000 Blackwell GPUs, resident layers 0–17 / 18–39. The heavier
   first stage uses the headless GPU. No backbone CPU fallback or expert eviction.
+- Selected profile: **layer split + DSpark**, one session, with a bounded
+  MTP-only GPU cache (1024 MiB ceiling). Experimental TP is not selected.
 - Capacity **524,288**. Published YaRN factor 16 remains unchanged.
 - Models and lossless packs stay under the configured `STRATA_DATA_DIR`.
   `Strata-data/` provides convenient links; it does not duplicate weights.
@@ -27,7 +29,7 @@ so far and remaining limits are listed below. The older SAGE installer is not us
 git clone https://github.com/lunarmoon26/deepseek-v4.1-flash.git
 cd deepseek-v4.1-flash
 git clone https://github.com/lunarmoon26/Strata-DS.git Strata
-git -C Strata checkout --detach a101972ef8332ffa4aabb3a718c489e831fd287c
+git -C Strata checkout --detach a3d8196bb64c50b9994536738629ad7b6f982297
 python3 -m venv .venv
 .venv/bin/pip install -r deployment/requirements.txt
 cp .env.example .env
@@ -90,15 +92,19 @@ The wrappers load ignored `.env` defaults; explicit environment assignments win.
 Python defaults to `.venv/bin/python` (`DS41_PYTHON` overrides it).
 Set installation options in `.env` or pass them to `bash install.sh`, then rerun
 the installer whenever paths, Python, GPU order, port or serving options change.
-For example, `DS41_SPEC=suffix bash install.sh`; changes take effect on the next
+For example, `DS41_SPEC=none bash install.sh` disables drafting; changes take effect on the next
 manual restart, not on the currently running server. `DS41_PORT` selects a different
 **localhost** port. `DS41_SPEC=none|suffix|dspark`
-selects greedy drafting; default `none` avoids reference-verification overhead.
+selects greedy drafting; this deployment defaults to `dspark` with layer split.
 `DS41_PARALLEL=2` enables two isolated concurrent sessions with serial GPU
 scheduling, not fused batch acceleration. Batch decode and sampled requests use
-ordinary decoding, even when a drafter is loaded. No speedup is claimed for the
-snapshot/replay verifier. DSpark uses the actual published MTP weights; draft
-experts alone use bounded streaming, never backbone eviction or requantization.
+ordinary decoding, even when a drafter is loaded. The verifier batches tentative
+rows and commits accepted state without backbone replay. DSpark uses the actual
+published MTP weights; draft experts alone use bounded streaming and an MTP-only
+GPU LRU, never backbone eviction or requantization. The measured short coding
+fixture benefits; other prompts, sampled requests and long contexts are not
+promised a speedup. Strata's engine CLI still defaults to speculation off;
+these wrappers explicitly select the deployment profile.
 
 To rebuild the current local source: `bash build-local.sh`. The native resident
 targets and component tests build under `Strata/build-sm120-resident/`; the build
@@ -144,8 +150,8 @@ binding. The native and container launchers share a lock; do not load a competin
 model onto the same GPUs simultaneously. Automatic restart is disabled. Stop removes the container, not
 models, packs or images. The earlier image built successfully; rebuild it for
 the installer workflow. GPU container runtime validation is not completed.
-The current running service uses the validated
-native launcher, not Docker.
+The selected local deployment uses the native launcher, not Docker. The
+persistent service remains stopped until an explicit `bash start.sh`.
 Containers generate their own configuration from the mounted assets before
 delegating to the same generated launcher; host-generated paths are not baked in.
 
@@ -160,7 +166,37 @@ occupied-port rejection. These tests do not load model weights or use a GPU.
 
 ### Current deployment (2026-10-20)
 
-- The deployment checkout and source pin select the latest upstream-based port;
+- Selected profile: **layer split 18/22 + DSpark**, one session, 524288 capacity.
+  The persistent service remains stopped; installation does not start it.
+- The final matched native coding fixture (63 prompt tokens, 96 greedy outputs,
+  one warm-up and three timed runs, median) measures **80.808 tok/s** for layer
+  DSpark versus **68.090** without drafting: **18.7%** faster. TP measures
+  **41.991** without drafting and **43.026** with DSpark, so remains experimental.
+  All outputs match. This is not HTTP throughput or long-context performance.
+- Validation uses CUDA 13.4 / GCC 15 / SM120, two RTX PRO 6000 GPUs over PCIe P2P,
+  a 16 GiB host-memory limit, no cgroup swap and a two-CPU quota. No weights change.
+- All **15 component CTests** pass. Real-model full-logit, prefix-commit,
+  rejected-draft rollback, session, drafting and cancellation checks pass in
+  layer and TP modes; TP also passes at full configured capacity and in both GPU
+  orders. Capacity checks do not count as an actual-524K input run.
+- Native-pipe cases cover greedy replay, STOP/recovery, invalid IDs/overflow and
+  clean QUIT, including TP drafting with its cache disabled. Layer prefill and
+  sequential logits on the 513-token fixture remain byte-identical to the
+  previously published binary. The earlier layer native-pipe checks also pass.
+- The rebuilt installed binary also passes a native-pipe check using the exact
+  selected layer/DSpark configuration at **524288 capacity**: READY, fresh greedy
+  replay, STOP/recovery, invalid requests and clean QUIT. This uses short inputs,
+  not 524K input tokens, and leaves no persistent server running.
+- The latest CPU rerun passes 36 installer/tokenizer/mock-HTTP tests, six packer
+  tests and six wrapper tests. Mock HTTP is not real-model HTTP qualification.
+- Full-model Nsight-injected runs exit with code 139 before producing a report;
+  the cause is unresolved. Full-model kernel-level attribution, fresh real-model
+  HTTP, actual-524K input, independent numerical/quality and container GPU
+  qualification remain incomplete. Failed/cancelled receipts stay private.
+
+### Earlier upstream-port qualification
+
+- The earlier deployment checkout and source pin selected the upstream-based port;
   the native build and generated launcher select `build-sm120-resident/bin/ds41_serve`.
 - Runtime qualification used `1d2eb70`; the pinned `a101972` adds only the test
   assertion correction and qualification notes, with identical production code.
