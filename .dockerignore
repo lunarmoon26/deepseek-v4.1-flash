@@ -15,6 +15,10 @@ __pycache__
 strata-*.json
 third_party/llama.cpp
 Strata/.git
+Strata/run-deepseek-1017.sh*
+Strata/strata-deepseek-1017.json*
+Strata/.run-deepseek-1017.sh*
+Strata/.strata-deepseek-1017.json*
 Strata/build*
 Strata/.venv
 Strata/logs

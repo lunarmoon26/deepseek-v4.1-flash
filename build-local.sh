@@ -12,9 +12,10 @@ for tool in "$CMAKE" "$NINJA" "$NVCC"; do
     exit 1
   fi
 done
-"$CMAKE" -S "$ROOT/deployment/cmake" -B "$ROOT/Strata/build-sm120-serving" -G Ninja \
+"$CMAKE" -S "$ROOT/Strata" -B "$ROOT/Strata/build-sm120-resident" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120 \
   -DCMAKE_MAKE_PROGRAM="$NINJA" \
   -DCMAKE_CUDA_COMPILER="$NVCC" \
-  -DSTRATA_DS41_SOURCE="$ROOT/Strata" -DSTRATA_DS41_1017=ON -DSTRATA_DS41_STAGE_TESTS=ON
-exec "$CMAKE" --build "$ROOT/Strata/build-sm120-serving" --target ds41_serve ds41_generate --parallel "${DS41_BUILD_JOBS:-2}"
+  -DSTRATA_ENABLE_CUDA=ON -DSTRATA_ENABLE_DS41=ON -DSTRATA_DS41_STANDALONE=ON \
+  -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DSTRATA_DS41_STAGE_TESTS=ON
+exec "$CMAKE" --build "$ROOT/Strata/build-sm120-resident" --parallel "${DS41_BUILD_JOBS:-2}"

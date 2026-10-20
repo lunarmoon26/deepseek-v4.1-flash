@@ -19,11 +19,15 @@ deployment repository. Model-specific settings are not copied from Qwen.
 
 Clone the pinned engine separately; it is not vendored or automatically updated:
 
+The engine pin selects the upstream-based resident backend and native 1017
+installer. The local native service uses this revision; validation completed
+so far and remaining limits are listed below. The older SAGE installer is not used.
+
 ```bash
 git clone https://github.com/lunarmoon26/deepseek-v4.1-flash.git
 cd deepseek-v4.1-flash
 git clone https://github.com/lunarmoon26/Strata-DS.git Strata
-git -C Strata checkout --detach ccd8cf28e4d72095fef96e00114105b52afc55d4
+git -C Strata checkout --detach a101972ef8332ffa4aabb3a718c489e831fd287c
 python3 -m venv .venv
 .venv/bin/pip install -r deployment/requirements.txt
 cp .env.example .env
@@ -51,6 +55,7 @@ Then:
 
 ```bash
 bash build-local.sh
+bash install.sh        # validate existing assets; generate config + launcher; never starts the model
 bash check.sh
 bash start.sh          # foreground; Ctrl+C stops it
 ```
@@ -66,10 +71,28 @@ OpenAI clients use `http://127.0.0.1:8081/v1`, model
 `/v1/responses` and `/v1/messages`. Images are not supported. Do not tunnel or
 publish the unauthenticated listener. No automatic boot service is installed.
 
-`deployment/local_serve.py` owns configuration generation and validates the pinned
-pack before launch. The wrappers load ignored `.env` defaults; explicit environment
-assignments win. Python defaults to `.venv/bin/python` (`DS41_PYTHON` overrides it).
-`DS41_PORT` selects a different **localhost** port. `DS41_SPEC=none|suffix|dspark`
+Like Qwen's workflow, `install.sh` delegates to **Strata's `setup.sh`** using the
+explicit `--family deepseek --model 1017-EXL3-2.7BPW --configure-only` profile.
+The fork generates **`Strata/strata-deepseek-1017.json`** and
+**`Strata/run-deepseek-1017.sh`**. `start.sh` delegates to that generated launcher;
+launching does not regenerate configuration. The installer reuses the existing
+engine, model, pack and Python environment: no downloads, build, quantization,
+GPU loading or automatic start. It is safe to install while the server is running.
+Generated files are private and excluded from both repositories; changed generated
+files are backed up, and files not owned by this installer are never overwritten.
+
+The configuration writer and preflight/smoke helper now belong to the fork's
+`tools/setup_deepseek_1017.py`; there is no separate deployment configuration
+writer. The generated launcher executes Strata's own `serve/server.py` using
+the installed configuration after preflight. Native options are documented in
+`Strata/docs/DEEPSEEK_1017.md`, under "Build and configure".
+The wrappers load ignored `.env` defaults; explicit environment assignments win.
+Python defaults to `.venv/bin/python` (`DS41_PYTHON` overrides it).
+Set installation options in `.env` or pass them to `bash install.sh`, then rerun
+the installer whenever paths, Python, GPU order, port or serving options change.
+For example, `DS41_SPEC=suffix bash install.sh`; changes take effect on the next
+manual restart, not on the currently running server. `DS41_PORT` selects a different
+**localhost** port. `DS41_SPEC=none|suffix|dspark`
 selects greedy drafting; default `none` avoids reference-verification overhead.
 `DS41_PARALLEL=2` enables two isolated concurrent sessions with serial GPU
 scheduling, not fused batch acceleration. Batch decode and sampled requests use
@@ -77,7 +100,9 @@ ordinary decoding, even when a drafter is loaded. No speedup is claimed for the
 snapshot/replay verifier. DSpark uses the actual published MTP weights; draft
 experts alone use bounded streaming, never backbone eviction or requantization.
 
-To rebuild the current local source: `bash build-local.sh`. No download or model
+To rebuild the current local source: `bash build-local.sh`. The native resident
+targets and component tests build under `Strata/build-sm120-resident/`; the build
+does not run GPU tests or load weights. No download or model
 conversion occurs. CMake and Ninja are found in `.venv/bin` or `PATH`;
 `DS41_CMAKE`, `DS41_NINJA` and `CUDACXX` override them. `DS41_CUDA_VISIBLE_DEVICES`
 sets CUDA ordering independently of physical `DS41_TELEMETRY_GPUS` monitoring IDs.
@@ -107,11 +132,44 @@ never download weights. Model and pack mounts are read-only and keep their
 absolute paths for Engram row reads. Linux host networking preserves loopback
 binding. The native and container launchers share a lock; do not load a competing
 model onto the same GPUs simultaneously. Automatic restart is disabled. Stop removes the container, not
-models, packs or images. The image builds successfully; GPU container runtime
-validation is not completed. The current running service uses the validated
+models, packs or images. The earlier image built successfully; rebuild it for
+the installer workflow. GPU container runtime validation is not completed.
+The current running service uses the validated
 native launcher, not Docker.
+Containers generate their own configuration from the mounted assets before
+delegating to the same generated launcher; host-generated paths are not baked in.
 
 ## Validation
+
+`python3 -m unittest deployment/test_launchers.py -v` runs six CPU-only wrapper
+tests for environment precedence and delegation to the native installer, launcher
+and checks. `python3 Strata/tools/test_setup_deepseek_1017.py -v` tests the native
+profile, including idempotent installation, private files/backups, refusal to
+overwrite user files, shell quoting, direct server delegation, lock exclusion and
+occupied-port rejection. These tests do not load model weights or use a GPU.
+
+### Current deployment (2026-10-20)
+
+- The deployment checkout and source pin select the latest upstream-based port;
+  the native build and generated launcher select `build-sm120-resident/bin/ds41_serve`.
+- Runtime qualification used `1d2eb70`; the pinned `a101972` adds only the test
+  assertion correction and qualification notes, with identical production code.
+- 64 installer/tokenizer/mock-HTTP/packer tests and six deployment-wrapper tests pass.
+- All 11 component CTests pass in the qualification checkout. One stale MCG test
+  assertion was corrected to expect the earlier resident device-policy
+  refusal; no production engine code changed.
+- A 513-token real-model case passes retrieval, batched/sequential comparison,
+  snapshot restore, deterministic replay and cancellation recovery. Its final
+  prefill logits match the historical binary byte for byte.
+- The actual 524,256-token rerun and queued follow-up tests were cancelled at the
+  user's request. They are not claimed as passing. The newly built deployment
+  starts successfully and reports loaded/healthy at 524,288 capacity; fresh live
+  API qualification was not completed.
+- No model download, requantization, simultaneous model loads or Docker GPU
+  qualification took place. The isolated container Python layout imports both
+  entrypoints; that is not a container runtime test.
+
+### Historical deployment (`ccd8cf2`)
 
 The real-input ladder passed at 32,768, 131,072, 262,144 and **524,256 tokens**.
 The final test generated the expected `BRONZE-73921`; prefill took **531.73 s
@@ -121,15 +179,15 @@ fixture, not a broad long-context benchmark or an HTTP throughput measurement.
 
 Native serving passes real-model OpenAI streaming/nonstreaming, Responses,
 Anthropic Messages, tool calls, concurrent session isolation, disconnect/recovery,
-context overflow rejection and browser chat. The latest eight stage/component
+context overflow rejection and browser chat. At that revision, eight stage/component
 CTest cases, 32 packer tests and 27 protocol/parser/cancellation tests pass.
 Published DSpark execution, confidence, replay and live API arithmetic pass;
 suffix mode passes the real API checks. These functional checks are not a broad
 coding-agent quality benchmark or evidence that speculation is faster. The
 running default therefore uses ordinary decode (`DS41_SPEC=none`).
 
-Current measurements and limits belong to `Strata/docs/MULTI_GPU.md`. Raw local
-receipts and failures are not published here. Engine changes are merged into
-the fork's `main` as `ccd8cf2` ([PR #2](https://github.com/lunarmoon26/Strata-DS/pull/2)).
+The preceding real-model measurements qualify the historical `ccd8cf2` binary,
+not the upstream port. Current source is pinned in `deployment/strata-source.json`.
+Raw local receipts and failures are not published here.
 This repository publishes portable launchers and templates, not `.env`, device
 UUIDs, private client configuration, model links, weights, builds or logs.
