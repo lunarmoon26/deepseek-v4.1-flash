@@ -22,14 +22,15 @@ deployment repository. Model-specific settings are not copied from Qwen.
 Clone the pinned engine separately; it is not vendored or automatically updated:
 
 The engine pin selects the upstream-based resident backend and native 1017
-installer. The local native service uses this revision; validation completed
-so far and remaining limits are listed below. The older SAGE installer is not used.
+installer. Updating this published pin does not update an existing installed
+checkout or start its service. Validation and the unchanged installed baseline
+are recorded below. The older SAGE installer is not used.
 
 ```bash
 git clone https://github.com/lunarmoon26/deepseek-v4.1-flash.git
 cd deepseek-v4.1-flash
 git clone https://github.com/lunarmoon26/Strata-DS.git Strata
-git -C Strata checkout --detach a3d8196bb64c50b9994536738629ad7b6f982297
+git -C Strata checkout --detach 3cda8ac27f40840716c9051b2aa382bdfe3325d0
 python3 -m venv .venv
 .venv/bin/pip install -r deployment/requirements.txt
 cp .env.example .env
@@ -164,7 +165,46 @@ profile, including idempotent installation, private files/backups, refusal to
 overwrite user files, shell quoting, direct server delegation, lock exclusion and
 occupied-port rejection. These tests do not load model weights or use a GPU.
 
-### Current deployment (2026-10-20)
+### Grouped-prefill qualification (2026-10-24)
+
+The published engine pin adds **opt-in grouped packed EXL3 prefill**
+(`DS41_PF_GROUPED=1`) and resident-stage phase profiling. The reconstructed-GEMM
+path remains the default; no launcher preset or generated configuration changes.
+The installed local checkout remains at `a3d8196`, layer split + DSpark, with its
+service stopped. Publishing this revision does not install or enable it.
+
+Matched native prefill, unchanged pinned weights and 524288 capacity:
+
+| Actual input | Fixture | Default tokens/s | Grouped tokens/s | Speedup |
+| ---: | --- | ---: | ---: | ---: |
+| 16384 | Source code | 510.976 | 1325.218 | 2.59x |
+| 65536 | Retrieval | 1003.757 | 1904.510 | 1.90x |
+| 524256 | Retrieval | 833.807 | 1384.878 | 1.66x |
+
+The 16K result uses one warm-up and three timed runs (median 32.064 vs 12.363 s).
+The long-input rows each use one prefill per fresh engine, not repeat medians:
+65.291 vs 34.411 s at 64K; 628.750 vs 378.557 s at 524256. Both paths select
+chunk/batch 512/256 with DSpark enabled and zero prefix reuse. Timings include
+prefill allocation, transfers and cleanup, but exclude load, tokenization and HTTP.
+The repeated-background retrieval fixture is not a general coding benchmark.
+
+Both paths actually process the full 524256-token prompt, return `BRONZE-73921`,
+pass snapshot continuation and finish at position 524262 within 524288 capacity.
+The 64K pair passes too. No backbone streaming, cgroup swap or OOM occurs; maximum
+observed cgroup memory across the four long cases is 9.36 GiB under a 16 GiB limit,
+including file cache. Grouped logits differ numerically but pass the unchanged
+equal-argmax, KL <0.02 and relative-L2 <0.25 gates. Default-path logits remain
+byte-identical to the published reference on the historical 513-token fixture.
+
+All 15 component CTests and 36 installer/tokenizer/mock-HTTP, six packer and six
+wrapper tests pass. The requested 512-batch trial is **not qualified**: its plan
+shrinks mid-run and exact replay fails; that partial timing is not adopted.
+Actual full-context speculative-decode throughput, independent broad quality,
+fresh real-model HTTP and current container GPU runtime remain unqualified.
+Full methods, attribution and limits live in the engine's
+[`DEEPSEEK_1017.md`](https://github.com/lunarmoon26/Strata-DS/blob/3cda8ac27f40840716c9051b2aa382bdfe3325d0/docs/DEEPSEEK_1017.md).
+
+### Installed deployment baseline (2026-10-20; unchanged)
 
 - Selected profile: **layer split 18/22 + DSpark**, one session, 524288 capacity.
   The persistent service remains stopped; installation does not start it.
@@ -190,9 +230,10 @@ occupied-port rejection. These tests do not load model weights or use a GPU.
 - The latest CPU rerun passes 36 installer/tokenizer/mock-HTTP tests, six packer
   tests and six wrapper tests. Mock HTTP is not real-model HTTP qualification.
 - Full-model Nsight-injected runs exit with code 139 before producing a report;
-  the cause is unresolved. Full-model kernel-level attribution, fresh real-model
-  HTTP, actual-524K input, independent numerical/quality and container GPU
-  qualification remain incomplete. Failed/cancelled receipts stay private.
+  the cause is unresolved. At this earlier checkpoint, full-model kernel-level
+  attribution, fresh real-model HTTP, actual-524K input, independent quality and
+  container GPU qualification were incomplete. The later actual-input results
+  above cover layer split, not TP2. Failed/cancelled receipts stay private.
 
 ### Earlier upstream-port qualification
 
