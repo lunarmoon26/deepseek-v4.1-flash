@@ -3,6 +3,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 import http.client
 import json
+import os
 from pathlib import Path
 import time
 import urllib.error
@@ -12,6 +13,7 @@ import urllib.request
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=18082)
+    parser.add_argument('--context', type=int, default=32768)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--browser', action='store_true')
     a = parser.parse_args()
@@ -22,9 +24,12 @@ def main():
         (a.out / 'results.json').write_text(json.dumps(results, ensure_ascii=False, indent=2) + '\n')
 
     def call(path, body=None, stream=False):
+        headers = {'Content-Type': 'application/json'}
+        if os.environ.get('STRATA_API_KEY'):
+            headers['Authorization'] = 'Bearer ' + os.environ['STRATA_API_KEY']
         req = urllib.request.Request(f'http://127.0.0.1:{a.port}{path}',
                                      data=None if body is None else json.dumps(body).encode(),
-                                     headers={'Content-Type': 'application/json'})
+                                     headers=headers)
         with urllib.request.urlopen(req, timeout=180) as r:
             data = r.read().decode()
         return data if stream else json.loads(data)
@@ -40,15 +45,18 @@ def main():
             value = fn()
             results.append({'test': name, 'status': 'pass', 'seconds': time.monotonic() - start, 'result': value})
         except Exception as e:
-            results.append({'test': name, 'status': 'fail', 'error': repr(e)})
+            failure = {'test': name, 'status': 'fail', 'error': repr(e)}
+            if isinstance(e, urllib.error.HTTPError):
+                failure['response'] = e.read().decode(errors='replace')
+            results.append(failure)
             save(); raise
         save(); print('PASS', name, flush=True)
 
     def health():
-        r = call('/health'); assert r['loaded'] and r['max_context'] == 524288, r
+        r = call('/health'); assert r['status'] == 'ok' and not r.get('unloaded') and r['max_context'] == a.context, r
         models = call('/v1/models'); assert any(x['id'] == 'deepseek-v4.1-flash-1017' for x in models['data']), models
         return r
-    test('loaded-524288-health-and-models', health)
+    test('loaded-health-and-models', health)
 
     def arithmetic():
         r = call('/v1/chat/completions', chat('What is 17 * 19? Reply with only the integer.'))
@@ -72,16 +80,15 @@ def main():
     test('verbatim-copy-for-suffix-drafts', copy_text)
 
     def responses():
-        r = call('/v1/responses', {'model': 'strata', 'input': 'What is the capital of France? Reply with only the city name.',
-                                 'max_output_tokens': 128, 'temperature': 0,
-                                 'chat_template_kwargs': {'enable_thinking': False}})
+        r = call('/v1/responses', {'model': 'deepseek-v4.1-flash-1017', 'input': 'What is the capital of France? Reply with only the city name.',
+                                 'max_output_tokens': 128, 'temperature': 0, 'reasoning': {'effort': 'none'}})
         text = ''.join(c.get('text', '') for x in r['output'] for c in x.get('content', []))
         assert 'Paris' in text, r
         return r
     test('responses-api', responses)
 
     def anthropic():
-        r = call('/v1/messages', {'model': 'strata', 'messages': [{'role': 'user', 'content': 'What is 2 + 2?'}],
+        r = call('/v1/messages', {'model': 'deepseek-v4.1-flash-1017', 'messages': [{'role': 'user', 'content': 'What is 2 + 2?'}],
                                 'max_tokens': 256, 'temperature': 0, 'thinking': {'type': 'disabled'}})
         text = ''.join(c.get('text', '') for c in r['content'])
         assert '4' in text, r
@@ -110,8 +117,11 @@ def main():
 
     def cancel():
         conn = http.client.HTTPConnection('127.0.0.1', a.port, timeout=180)
+        headers = {'Content-Type': 'application/json'}
+        if os.environ.get('STRATA_API_KEY'):
+            headers['Authorization'] = 'Bearer ' + os.environ['STRATA_API_KEY']
         conn.request('POST', '/v1/chat/completions', json.dumps(chat('Write an extremely long story, at least 2000 words.',
-                                                               max_tokens=2048, stream=True)), {'Content-Type': 'application/json'})
+                                                               max_tokens=2048, stream=True)), headers)
         response = conn.getresponse(); assert response.status == 200
         while True:
             line = response.readline()
@@ -125,7 +135,7 @@ def main():
 
     def overflow():
         try:
-            call('/v1/chat/completions', chat('hello', max_tokens=524288))
+            call('/v1/chat/completions', chat('hello', max_tokens=a.context))
         except urllib.error.HTTPError as e:
             assert e.code == 400, e.code
             return json.loads(e.read())

@@ -8,5 +8,5 @@ if [[ -z "${STRATA_DATA_DIR:-}" || "$STRATA_DATA_DIR" != /* || ! -d "$STRATA_DAT
 fi
 mkdir -p "$ROOT/logs"
 docker --context default compose -f "$ROOT/compose.yaml" up --no-build -d --wait --wait-timeout 300 "$@"
-echo 'Strata is ready: http://127.0.0.1:8081/v1'
+echo "Maya is ready: http://127.0.0.1:${DS41_PORT:-8081}/v1"
 echo 'Logs: docker --context default compose logs -f'

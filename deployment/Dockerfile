@@ -1,38 +1,37 @@
 # syntax=docker/dockerfile:1
-# Build THIS pinned checkout, never an unrelated upstream HEAD.
+# The named `maya` build context is the existing pinned source checkout.
 FROM nvidia/cuda:13.0.0-devel-ubuntu24.04 AS build
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential ca-certificates python3 python3-venv ninja-build \
+    build-essential ca-certificates git python3 python3-venv ninja-build \
     && rm -rf /var/lib/apt/lists/*
-WORKDIR /opt/strata
-COPY Strata/ Strata/
-RUN python3 -m venv .venv && .venv/bin/pip install --no-cache-dir cmake==4.4.3 \
-    && .venv/bin/cmake -S Strata -B build -G Ninja \
+WORKDIR /opt/maya
+COPY --from=maya . /opt/maya/
+RUN test "$(git rev-parse HEAD)" = 249f9a87d1a9d72bec2b684d704b0aa9296b1c9c \
+    && test -z "$(git status --porcelain --untracked-files=all -- serve tools/maya_names.py tools/maya_quants.py tools/strata_tokenizer.py)" \
+    && test -z "$(git status --porcelain --untracked-files=all -- src include cmake third_party CMakeLists.txt)" \
+    && python3 -m venv /opt/build-tools \
+    && /opt/build-tools/bin/pip install --no-cache-dir cmake==4.4.3 \
+    && /opt/build-tools/bin/cmake -S /opt/maya -B /opt/maya-build -G Ninja \
        -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120 \
-       -DSTRATA_ENABLE_CUDA=ON -DSTRATA_ENABLE_DS41=ON -DSTRATA_DS41_STANDALONE=ON \
-       -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DSTRATA_DS41_STAGE_TESTS=OFF \
-    && .venv/bin/cmake --build build --target ds41_serve --parallel 2
+       -DMAYA_ENABLE_CUDA=ON -DMAYA_BUILD_TESTS=OFF -DMAYA_NATIVE_EXPERTS=OFF \
+       -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
+    && /opt/build-tools/bin/cmake --build /opt/maya-build --target maya-ds4 --parallel 2
 
 FROM nvidia/cuda:13.0.0-runtime-ubuntu24.04
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 LANG=C.UTF-8 \
-    DS41_PYTHON=/opt/strata/.venv/bin/python DS41_ENGINE=/opt/strata/engine/ds41_serve
+    MAYA_PYTHON=/opt/deployment/.venv/bin/python MAYA_SOURCE_DIR=/opt/maya \
+    MAYA_ENGINE=/opt/engine/maya-ds4 MAYA_CONTAINER=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates python3 python3-venv libatomic1 libgomp1 util-linux \
+    ca-certificates git python3 python3-venv libatomic1 libgomp1 util-linux \
     && rm -rf /var/lib/apt/lists/*
-WORKDIR /opt/strata
+WORKDIR /opt/deployment
 RUN python3 -m venv .venv && .venv/bin/pip install --no-cache-dir \
     regex==2026.9.10 jinja2==3.1.6 pyyaml==6.0.3 psutil==7.2.2
-COPY --from=build /opt/strata/build/bin/ds41_serve /opt/strata/engine/ds41_serve
-COPY Strata/serve Strata/serve
-COPY Strata/strata_control Strata/strata_control
-COPY Strata/strata_cli Strata/strata_cli
-COPY Strata/tools Strata/tools
-COPY Strata/ds41/proto Strata/ds41/proto
-COPY Strata/setup.py Strata/setup.sh Strata/
-COPY deployment/env.sh deployment/env.sh
-COPY deployment/docker-entrypoint.sh deployment/docker-entrypoint.sh
+COPY --from=build /opt/maya /opt/maya
+COPY --from=build /opt/maya-build/maya-ds4 /opt/engine/maya-ds4
+COPY deployment/env.sh deployment/maya_local.py deployment/docker-entrypoint.sh deployment/
 COPY install.sh start.sh check.sh smoke-test.sh ./
 HEALTHCHECK --interval=15s --timeout=5s --start-period=300s --retries=3 \
-    CMD ["/opt/strata/.venv/bin/python", "-c", "import json,urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8081/health',timeout=4))['loaded']"]
-ENTRYPOINT ["bash", "/opt/strata/deployment/docker-entrypoint.sh"]
+    CMD ["/opt/deployment/.venv/bin/python", "-c", "import json,os,urllib.request; p=os.environ.get('DS41_PORT','8081'); k=os.environ.get('STRATA_API_KEY',''); r=urllib.request.Request('http://127.0.0.1:'+p+'/health',headers={'Authorization':'Bearer '+k} if k else {}); h=json.load(urllib.request.urlopen(r,timeout=4)); assert h.get('status')=='ok' and not h.get('unloaded')"]
+ENTRYPOINT ["bash", "/opt/deployment/deployment/docker-entrypoint.sh"]

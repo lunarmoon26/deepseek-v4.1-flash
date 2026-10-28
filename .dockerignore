@@ -1,5 +1,7 @@
 .git
 .venv
+.maya-deepseek-1017.json*
+Project-Maya
 build*
 logs
 models

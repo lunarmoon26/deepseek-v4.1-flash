@@ -1,64 +1,65 @@
-# Local DeepSeek V4.1 Flash 1017 with Strata
+# Local DeepSeek V4.1 Flash 1017 with Project Maya
 
-Standalone launchers for the native [Strata-DS engine](https://github.com/lunarmoon26/Strata-DS).
-The engine and its Git history live in **`Strata/`**, independently of this
-deployment repository. Model-specific settings are not copied from Qwen.
+Local launchers for [Project Maya](https://github.com/mw00/project-maya) and the
+existing LibertAIDAI EXL3 checkpoint. The independent `Strata/` fork and its
+old generated configuration remain for reference, but their 2.7-bpw packs have
+been removed, so they are not a runnable fallback. The root launchers select
+Maya. Neither model downloads nor requantization are part of this deployment.
 
 ## Configuration
 
-- Only `sudoingx/DeepSeek-V4.1-Flash-1017-EXL3-2.7bpw`, revision
-  `22205b9aff07ae7b999d466aaf96446c20f4ea97`.
-- Two RTX PRO 6000 Blackwell GPUs, resident layers 0–17 / 18–39. The heavier
-  first stage uses the headless GPU. No backbone CPU fallback or expert eviction.
-- Selected profile: **layer split + DSpark**, one session, with a bounded
-  MTP-only GPU cache (1024 MiB ceiling). Experimental TP is not selected.
-- Capacity **524,288**. Published YaRN factor 16 remains unchanged.
-- Models and lossless packs stay under the configured `STRATA_DATA_DIR`.
-  `Strata-data/` provides convenient links; it does not duplicate weights.
+- Maya v1.1.34 at `249f9a87d1a9d72bec2b684d704b0aa9296b1c9c`, with
+  `LibertAIDAI/DeepSeek-V4.1-Flash-1017-EXL3-2.9bpw`, revision
+  `c178a01284fc5c0e859d8668cffaac81ca8f4042`.
+- Two NVIDIA GPUs, layer split (`--tp 1`) with DSpark, mmap experts, vision off
+  and suffix drafting disabled. Approximate expert skipping is forced off. Some
+  experts can use Maya's CPU lane; this is not the earlier fully resident Strata
+  profile.
+- The initial context capacity is **32,768**. A larger configurable capacity
+  is not evidence that an actual long prompt works on this setup.
+- Model shards and the existing Maya pack stay under `STRATA_DATA_DIR`; the
+  pack indexes the existing weights rather than duplicating them.
 - Local API and browser chat: **http://127.0.0.1:8081** (Qwen keeps `:8080`).
 
 ## Commands
 
-Clone the pinned engine separately; it is not vendored or automatically updated:
-
-The engine pin selects the upstream-based resident backend and native 1017
-installer. Updating this published pin does not update an existing installed
-checkout or start its service. Validation and the unchanged installed baseline
-are recorded below. The older SAGE installer is not used.
+Use an existing pinned Maya checkout, engine and prepared pack. They are not
+vendored or automatically downloaded by the launchers. For a new checkout:
 
 ```bash
 git clone https://github.com/lunarmoon26/deepseek-v4.1-flash.git
 cd deepseek-v4.1-flash
-git clone https://github.com/lunarmoon26/Strata-DS.git Strata
-git -C Strata checkout --detach 3cda8ac27f40840716c9051b2aa382bdfe3325d0
+git clone https://github.com/mw00/project-maya.git Project-Maya
+git -C Project-Maya checkout --detach 249f9a87d1a9d72bec2b684d704b0aa9296b1c9c
 python3 -m venv .venv
 .venv/bin/pip install -r deployment/requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` with your **absolute data directory**, CUDA device order and optional
-tool paths. Use a CUDA toolkit compatible with SM120 (the native build was
-validated with CUDA 13.4 and GCC 15). No model download or quantization is run by
-these commands. The pinned source identity is in `deployment/strata-source.json`.
+Edit `.env` with absolute paths to the data directory, Maya checkout, compiled
+`maya-ds4` binary and already prepared pack. Set the CUDA device order. The
+local build used CUDA 13.4, GCC 15 and SM120. The Maya checkout's serving files
+must be clean and its Git revision must match the pin; rebuilding also requires
+clean engine sources.
 
-Provision the verified source model and lossless pack under this data layout:
+The expected data layout is:
 
 ```text
 STRATA_DATA_DIR/
-  models/sudoingx-DeepSeek-V4.1-Flash-1017-EXL3-2.7bpw/<pinned revision>/
-  packs/sudoingx-1017-22205b9a-EXL3-2.7bpw-dspark/
+  models/LibertAIDAI-DeepSeek-V4.1-Flash-1017-EXL3-2.9bpw/<pinned revision>/
+  models/DeepSeek-V4.1-Flash-1017-Engram/
+  packs/<existing Maya 2.9 pack>/
 ```
 
-Engram files must remain available independently of obsolete model directories.
-The `-dspark` pack includes the published MTP experts; no Qwen-style standalone
-`mtp/` directory is required. Optional `Strata-data/models/` and
-`Strata-data/packs/` links can point to the data disk; they stay out of Git.
+The 2.9 model links its two Engram shards to the shared directory. The original
+2.7 paths remain hard links to those same shards. The other 2.7 source weights
+and both 2.7 packs have been removed; the retained 2.7 source index and manifest
+no longer describe a complete checkpoint.
 
 Then:
 
 ```bash
-bash build-local.sh
-bash install.sh        # validate existing assets; generate config + launcher; never starts the model
+bash install.sh        # validate existing assets and write config; never starts the model
 bash check.sh
 bash start.sh          # foreground; Ctrl+C stops it
 ```
@@ -70,49 +71,25 @@ bash smoke-test.sh
 ```
 
 OpenAI clients use `http://127.0.0.1:8081/v1`, model
-`deepseek-v4.1-flash-1017` (alias `strata`). The server also exposes
+`deepseek-v4.1-flash-1017`. The server also exposes
 `/v1/responses` and `/v1/messages`. Images are not supported. Do not tunnel or
 publish the unauthenticated listener. No automatic boot service is installed.
 
-Like Qwen's workflow, `install.sh` delegates to **Strata's `setup.sh`** using the
-explicit `--family deepseek --model 1017-EXL3-2.7BPW --configure-only` profile.
-The fork generates **`Strata/strata-deepseek-1017.json`** and
-**`Strata/run-deepseek-1017.sh`**. `start.sh` delegates to that generated launcher;
-launching does not regenerate configuration. The installer reuses the existing
-engine, model, pack and Python environment: no downloads, build, quantization,
-GPU loading or automatic start. It is safe to install while the server is running.
-Generated files are private and excluded from both repositories; changed generated
-files are backed up, and files not owned by this installer are never overwritten.
+`install.sh` writes an ignored private `logs/maya-deepseek-1017.json`, backing up a
+changed configuration and refusing to overwrite a file it does not own. It does
+not load the model or start a server. `check.sh` checks the pinned source,
+model index, pack shard list and paths; it does not run inference. `start.sh`
+takes the shared service lock and launches Maya in the foreground. Explicit
+environment assignments override `.env` values. Rerun `install.sh` after changing
+paths, GPU order, port, `MAYA_CONTEXT` or `MAYA_SPEC=on|none`. Python defaults
+to `.venv/bin/python`; `MAYA_PYTHON` or `DS41_PYTHON` overrides it.
 
-The configuration writer and preflight/smoke helper now belong to the fork's
-`tools/setup_deepseek_1017.py`; there is no separate deployment configuration
-writer. The generated launcher executes Strata's own `serve/server.py` using
-the installed configuration after preflight. Native options are documented in
-`Strata/docs/DEEPSEEK_1017.md`, under "Build and configure".
-The wrappers load ignored `.env` defaults; explicit environment assignments win.
-Python defaults to `.venv/bin/python` (`DS41_PYTHON` overrides it).
-Set installation options in `.env` or pass them to `bash install.sh`, then rerun
-the installer whenever paths, Python, GPU order, port or serving options change.
-For example, `DS41_SPEC=none bash install.sh` disables drafting; changes take effect on the next
-manual restart, not on the currently running server. `DS41_PORT` selects a different
-**localhost** port. `DS41_SPEC=none|suffix|dspark`
-selects greedy drafting; this deployment defaults to `dspark` with layer split.
-`DS41_PARALLEL=2` enables two isolated concurrent sessions with serial GPU
-scheduling, not fused batch acceleration. Batch decode and sampled requests use
-ordinary decoding, even when a drafter is loaded. The verifier batches tentative
-rows and commits accepted state without backbone replay. DSpark uses the actual
-published MTP weights; draft experts alone use bounded streaming and an MTP-only
-GPU LRU, never backbone eviction or requantization. The measured short coding
-fixture benefits; other prompts, sampled requests and long contexts are not
-promised a speedup. Strata's engine CLI still defaults to speculation off;
-these wrappers explicitly select the deployment profile.
-
-To rebuild the current local source: `bash build-local.sh`. The native resident
-targets and component tests build under `Strata/build-sm120-resident/`; the build
-does not run GPU tests or load weights. No download or model
-conversion occurs. CMake and Ninja are found in `.venv/bin` or `PATH`;
-`DS41_CMAKE`, `DS41_NINJA` and `CUDACXX` override them. `DS41_CUDA_VISIBLE_DEVICES`
-sets CUDA ordering independently of physical `DS41_TELEMETRY_GPUS` monitoring IDs.
+Optional `STRATA_API_KEY` enables API authentication; keep the value in `.env`
+or the environment, not Git. The launcher always binds to loopback. Configure
+the same key in clients. For a rebuild, `bash build-local.sh` compiles the pinned
+Maya `maya-ds4` target without loading weights or downloading a model. It uses
+`MAYA_ENGINE`'s parent directory for the build and can replace that binary. The
+optional native-GGML expert backend is disabled, matching the tested EXL3 build.
 
 ## OpenCode
 
@@ -120,11 +97,16 @@ sets CUDA ordering independently of physical `DS41_TELEMETRY_GPUS` monitoring ID
 global configuration. Merge it under `providers.strata-deepseek` in your OpenCode
 configuration after making a local backup, preserving other providers and defaults.
 The selectable ID is **`strata-deepseek/deepseek-v4.1-flash-1017`**, with `fast`
-(thinking disabled) and `thinking` variants. Context is 524,288 total, with an
-8,192-token output cap and input limited to 516,088 for the native safety margin.
+(thinking disabled) and `thinking` variants. The initial fragment describes
+32,768 total tokens, an 8,192-token output cap and a 24,568-token input cap.
+If you deliberately change `MAYA_CONTEXT`, update the client limit separately;
+a larger number alone does not qualify long-context inference.
+When API authentication is enabled, configure the provider's `settings.apiKey`
+using an environment or file reference available to the OpenCode service; do not
+put the key in this repository.
 No personal OpenCode configuration or backup is included here.
 
-### OpenCode in use
+### Historical Strata OpenCode session
 
 ![Strata monitor during an OpenCode session, generating a read tool call](docs/images/opencode-strata-monitor.png)
 
@@ -143,27 +125,65 @@ docker --context default compose logs -f
 bash stop-docker.sh
 ```
 
-Set an absolute `STRATA_DATA_DIR` in `.env` before using Compose. Builds compile
-the local `Strata/` checkout for SM120 and install Python/CUDA dependencies, but
-never download weights. Model and pack mounts are read-only and keep their
-absolute paths for Engram row reads. Linux host networking preserves loopback
-binding. The native and container launchers share a lock; do not load a competing
-model onto the same GPUs simultaneously. Automatic restart is disabled. Stop removes the container, not
-models, packs or images. The earlier image built successfully; rebuild it for
-the installer workflow. GPU container runtime validation is not completed.
-The selected local deployment uses the native launcher, not Docker. The
-persistent service remains stopped until an explicit `bash start.sh`.
-Containers generate their own configuration from the mounted assets before
-delegating to the same generated launcher; host-generated paths are not baked in.
+Set `STRATA_DATA_DIR`, `MAYA_SOURCE_DIR` and `MAYA_PACK_DIR` in `.env` first.
+The build takes the pinned local Maya checkout as a separate build context and
+compiles `maya-ds4` for SM120; package dependencies are installed, but model
+weights are not downloaded. The model and pack mounts are read-only and keep
+their absolute paths for Engram reads. Linux host networking preserves loopback
+binding. Native and container launchers share a lock. Automatic restart is
+disabled, and stopping the container does not remove models, packs or images.
+The container writes a separate ignored config and does not overwrite the native one.
+The Maya image builds and its engine prints `--help` without a GPU; container
+GPU runtime has not yet been qualified.
 
 ## Validation
 
-`python3 -m unittest deployment/test_launchers.py -v` runs six CPU-only wrapper
-tests for environment precedence and delegation to the native installer, launcher
-and checks. `python3 Strata/tools/test_setup_deepseek_1017.py -v` tests the native
-profile, including idempotent installation, private files/backups, refusal to
-overwrite user files, shell quoting, direct server delegation, lock exclusion and
-occupied-port rejection. These tests do not load model weights or use a GPU.
+`python3 -m unittest deployment.test_launchers deployment.test_maya_local -v`
+runs CPU-only tests for the launcher, source and model identity checks, shared
+Engram paths, private configuration, lock exclusion and mocked smoke request.
+These tests do not load model weights or use a GPU. The 2.9-bpw model's index
+and EXL3 K-map were checked separately. The earlier native Maya trial used a
+63-token prompt at 32,768 capacity and matched 96 reference output tokens with
+and without DSpark. This is not an actual 32K prompt or a broad quality result.
+An earlier reset divergence did not recur in that trial; its cause is not proven.
+
+An isolated run of the installed Maya launcher at 32,768 capacity passed an
+authenticated smoke test, rejection of unauthenticated requests, and ten short
+real-model API checks: health and model listing, nonstreaming and streaming
+chat, verbatim copy, Responses, Messages, a tool call, concurrent request
+isolation, disconnect recovery and context-overflow rejection. SIGTERM returned
+cleanly. Under a 32-GiB cgroup limit, the run observed no swap or OOM; this is
+not an actual long-input, broad quality or Docker GPU qualification. The test
+scope was stopped and no service was left running.
+
+### Why Maya is selected
+
+A matched native-engine test compared Maya v1.1.34 with official Strata 0.1.52
+at [`5e8a4cca7`](https://github.com/Niko1221/Strata/tree/5e8a4cca7d690ac60ca37eb09e7d0e010099ad6d),
+using the same existing 2.9-bpw pack on two RTX PRO 6000 Blackwell GPUs.
+
+| Decode mode | Official Strata | Maya |
+| --- | ---: | ---: |
+| DSpark disabled (drafter still loaded) | 70.57 tok/s | 81.84 tok/s |
+| DSpark enabled | 135.65 tok/s | 150.01 tok/s |
+
+Each mode used eight runs of a 63-token prompt and 96-token greedy answer;
+the table gives the last four runs' median. All 32 outputs matched token for
+token, with zero prefix reuse. Both engines used 32,768-token capacity, six
+experts, layer split, eight CPU threads, a 32-GiB memory limit and no swap.
+Maya's suffix drafting and approximate expert skipping were disabled. Both
+processes exited cleanly after `QUIT` and input-pipe closure; model and pack
+metadata were unchanged. An earlier harness attempt left the pipe open and
+timed out at shutdown; its failed receipt was retained separately.
+
+This is one repeatedly warmed short fixture, with one load per engine run
+sequentially, not a varied workload, actual 32K input or broad quality test.
+OS caches and background GPU activity were not reset. Official Strata's engine
+can read this EXL3 pack, but its GGUF-oriented `--pack-info` diagnostic rejects
+it; the normal installer is not a drop-in replacement for the Maya deployment.
+
+The following sections record **historical Strata 2.7-bpw** experiments. Their
+performance, context and serving claims do not qualify the Maya deployment.
 
 ### Grouped-prefill qualification (2026-10-24)
 
@@ -274,7 +294,8 @@ coding-agent quality benchmark or evidence that speculation is faster. The
 running default therefore uses ordinary decode (`DS41_SPEC=none`).
 
 The preceding real-model measurements qualify the historical `ccd8cf2` binary,
-not the upstream port. Current source is pinned in `deployment/strata-source.json`.
+not the upstream port. The historical Strata source pin is in
+`deployment/strata-source.json`.
 Raw local receipts and failures are not published here.
 This repository publishes portable launchers and templates, not `.env`, device
 UUIDs, private client configuration, model links, weights, builds or logs.

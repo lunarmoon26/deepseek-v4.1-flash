@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # Mounted model paths are known only at container startup. This prepares files,
-# not a second server; start.sh then delegates to the generated launcher.
-bash /opt/strata/install.sh
-exec bash /opt/strata/start.sh "$@"
+# not a second server; start.sh then runs Maya with the shared lock.
+bash /opt/deployment/install.sh
+exec bash /opt/deployment/start.sh "$@"
