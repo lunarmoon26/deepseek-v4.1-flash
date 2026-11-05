@@ -87,6 +87,38 @@ class MayaDeploymentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "outside data directory"):
             maya.validate(cfg)
 
+    def test_prefill_chunks_are_independent_of_context(self):
+        os.environ["MAYA_CONTEXT"] = "524288"
+        for chunk in maya.PREFILL_CHUNKS:
+            with self.subTest(chunk=chunk):
+                os.environ["MAYA_PREFILL_CHUNK"] = str(chunk)
+                cfg = maya.config_from_env()
+                maya.validate(cfg)
+                self.assertEqual(cfg["_deployment"]["context"], 524288)
+                self.assertEqual(cfg["_deployment"]["prefill_chunk"], chunk)
+                self.assertEqual(cfg["args"][cfg["args"].index("--prefill-chunk") + 1], str(chunk))
+
+    def test_legacy_chunk_defaults_and_tampering(self):
+        cfg = maya.config_from_env()
+        del cfg["_deployment"]["prefill_chunk"]
+        maya.validate(cfg)
+        cfg["args"][cfg["args"].index("--prefill-chunk") + 1] = "2048"
+        with self.assertRaisesRegex(ValueError, "installed profile"):
+            maya.validate(cfg)
+        for value in (0, -1, 513, "512", True, 512.0):
+            with self.subTest(value=value):
+                cfg = maya.config_from_env()
+                cfg["_deployment"]["prefill_chunk"] = value
+                with self.assertRaisesRegex(ValueError, "prefill chunk"):
+                    maya.validate(cfg)
+
+    def test_invalid_chunk_environment_is_rejected(self):
+        for value in ("0", "auto", "-1", "513", "8192"):
+            with self.subTest(value=value):
+                os.environ["MAYA_PREFILL_CHUNK"] = value
+                with self.assertRaises(ValueError):
+                    maya.config_from_env()
+
     def test_pack_index_and_model_identity_are_checked(self):
         cfg = maya.config_from_env()
         with (self.pack / "tensors.txt").open("a") as out:

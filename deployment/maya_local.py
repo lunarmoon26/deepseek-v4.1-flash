@@ -16,11 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "logs" / ("maya-deepseek-1017.docker.json" if os.environ.get("MAYA_CONTAINER") == "1"
                            else "maya-deepseek-1017.json")
 OWNER = "deepseek-v4.1-flash/deployment/maya_local.py"
-MAYA_REVISION = "249f9a87d1a9d72bec2b684d704b0aa9296b1c9c"
+MAYA_REVISION = "c4effee67cb95fb4303720919b075fddf04b4e69"
 MODEL_REVISION = "c178a01284fc5c0e859d8668cffaac81ca8f4042"
 MODEL_SOURCE = "LibertAIDAI-DeepSeek-V4.1-Flash-1017-EXL3-2.9bpw"
 MODEL_ID = "deepseek-v4.1-flash-1017"
 CONTEXTS = (32768, 65536, 131072, 262144, 524288, 1048576)
+PREFILL_CHUNKS = (512, 1024, 2048, 4096)
 ENGRAM = {"model-00047-of-00048.safetensors", "model-00048-of-00048.safetensors"}
 
 
@@ -34,13 +35,16 @@ def absolute(value: str, label: str) -> Path:
 def config_from_env() -> dict:
     data = absolute(os.environ.get("STRATA_DATA_DIR", str(ROOT / "Strata-data")), "STRATA_DATA_DIR")
     source = absolute(os.environ.get("MAYA_SOURCE_DIR", str(ROOT / "Project-Maya")), "MAYA_SOURCE_DIR")
-    engine = absolute(os.environ.get("MAYA_ENGINE", str(data / "builds/project-maya-249f9a87-sm120/maya-ds4")),
+    engine = absolute(os.environ.get("MAYA_ENGINE", str(data / "builds/project-maya-c4effee-sm120/maya-ds4")),
                       "MAYA_ENGINE")
     pack = absolute(os.environ.get("MAYA_PACK_DIR", str(data / "packs/project-maya-249f9a87-libertaidai-29")),
                     "MAYA_PACK_DIR")
     context = int(os.environ.get("MAYA_CONTEXT", "32768"))
     port = int(os.environ.get("DS41_PORT", "8081"))
     spec = os.environ.get("MAYA_SPEC", "on")
+    chunk = int(os.environ.get("MAYA_PREFILL_CHUNK", "512"))
+    if chunk not in PREFILL_CHUNKS:
+        raise ValueError("Choose MAYA_PREFILL_CHUNK 512, 1024, 2048 or 4096")
     if context not in CONTEXTS or not 1 <= port <= 65535 or spec not in ("on", "none"):
         raise ValueError("Choose a supported MAYA_CONTEXT, DS41_PORT 1–65535, and MAYA_SPEC on or none")
     gpu = os.environ.get("DS41_CUDA_VISIBLE_DEVICES", "0,1")
@@ -50,12 +54,12 @@ def config_from_env() -> dict:
     return {
         "_generated_by": OWNER,
         "_deployment": {"data_dir": str(data), "cuda_visible_devices": gpu,
-                        "context": context, "spec": spec},
+                        "context": context, "spec": spec, "prefill_chunk": chunk},
         "exe": str(engine), "cwd": str(source),
         "args": ["--pack", str(pack), "--gpus", "0,1", "--max-context", str(context),
                  "--reserve-mib", "4096", "--cpu-threads", "8", "--mmap-experts", "on",
                  "--dspark", spec, "--vision", "off", "--tp", "1", "--threads", "on",
-                 "--prefill-chunk", "512", "--expert-profile", "none", "--suffix-draft", "0"],
+                 "--prefill-chunk", str(chunk), "--expert-profile", "none", "--suffix-draft", "0"],
         "tokenizer": str(pack / "tokenizer"), "model_name": MODEL_ID,
         "log": str(ROOT / "logs/maya-deepseek-1017.log"),
         "host": "127.0.0.1", "port": port, "reasoning_effort": "none", "open_browser": False,
@@ -71,7 +75,8 @@ def validate(cfg: dict) -> None:
             cfg.get("open_browser") is not False or cfg.get("log") != str(ROOT / "logs/maya-deepseek-1017.log")):
         raise ValueError("Unrecognized Maya configuration; rerun bash install.sh")
     deploy = cfg["_deployment"]
-    if set(deploy) != {"data_dir", "cuda_visible_devices", "context", "spec"}:
+    required = {"data_dir", "cuda_visible_devices", "context", "spec"}
+    if set(deploy) not in (required, required | {"prefill_chunk"}):
         raise ValueError("Unrecognized Maya deployment settings; rerun bash install.sh")
     data = absolute(deploy["data_dir"], "data directory")
     source = absolute(cfg["cwd"], "Maya source")
@@ -80,11 +85,14 @@ def validate(cfg: dict) -> None:
     pack = absolute(args[args.index("--pack") + 1], "Maya pack")
     context = int(deploy["context"])
     spec = deploy["spec"]
+    chunk = deploy.get("prefill_chunk", 512)
+    if type(chunk) is not int or chunk not in PREFILL_CHUNKS:
+        raise ValueError("Unsupported Maya prefill chunk; rerun bash install.sh")
     devices = [item.strip() for item in deploy["cuda_visible_devices"].split(",")]
     expected_args = ["--pack", str(pack), "--gpus", "0,1", "--max-context", str(context),
                      "--reserve-mib", "4096", "--cpu-threads", "8", "--mmap-experts", "on",
                      "--dspark", spec, "--vision", "off", "--tp", "1", "--threads", "on",
-                     "--prefill-chunk", "512", "--expert-profile", "none", "--suffix-draft", "0"]
+                     "--prefill-chunk", str(chunk), "--expert-profile", "none", "--suffix-draft", "0"]
     if (args != expected_args or context not in CONTEXTS or spec not in ("on", "none") or
             not 1 <= int(cfg["port"]) <= 65535 or len(devices) != 2 or not all(devices) or
             len(set(devices)) != 2):

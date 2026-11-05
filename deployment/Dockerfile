@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/maya
 COPY --from=maya . /opt/maya/
-RUN test "$(git rev-parse HEAD)" = 249f9a87d1a9d72bec2b684d704b0aa9296b1c9c \
+RUN test "$(git rev-parse HEAD)" = c4effee67cb95fb4303720919b075fddf04b4e69 \
     && test -z "$(git status --porcelain --untracked-files=all -- serve tools/maya_names.py tools/maya_quants.py tools/strata_tokenizer.py)" \
     && test -z "$(git status --porcelain --untracked-files=all -- src include cmake third_party CMakeLists.txt)" \
     && python3 -m venv /opt/build-tools \

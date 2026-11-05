@@ -23,12 +23,12 @@ class LauncherTests(unittest.TestCase):
     def test_explicit_environment_overrides_local_file(self):
         with tempfile.TemporaryDirectory() as d:
             root = self.project(d)
-            (root / ".env").write_text("MAYA_CONTEXT=65536\nMAYA_SPEC=none\n")
-            command = 'ROOT="$1"; source "$2"; printf "%s %s" "$MAYA_CONTEXT" "$MAYA_SPEC"'
+            (root / ".env").write_text("MAYA_CONTEXT=65536\nMAYA_SPEC=none\nMAYA_PREFILL_CHUNK=512\n")
+            command = 'ROOT="$1"; source "$2"; printf "%s %s %s" "$MAYA_CONTEXT" "$MAYA_SPEC" "$MAYA_PREFILL_CHUNK"'
             result = subprocess.run(["bash", "-c", command, "test", str(root), str(root / "deployment/env.sh")],
-                                    env={**os.environ, "MAYA_CONTEXT": "32768"},
+                                    env={**os.environ, "MAYA_CONTEXT": "32768", "MAYA_PREFILL_CHUNK": "2048"},
                                     capture_output=True, text=True, check=True)
-            self.assertEqual(result.stdout, "32768 none")
+            self.assertEqual(result.stdout, "32768 none 2048")
 
     def test_wrappers_delegate_to_maya_helper(self):
         with tempfile.TemporaryDirectory() as d:
@@ -60,7 +60,7 @@ class LauncherTests(unittest.TestCase):
             tool_dir.mkdir()
             git = tool_dir / "git"
             git.write_text("#!/bin/sh\ncase \"$*\" in *rev-parse*) "
-                           "printf '%s\\n' 249f9a87d1a9d72bec2b684d704b0aa9296b1c9c;; esac\n")
+                           "printf '%s\\n' c4effee67cb95fb4303720919b075fddf04b4e69;; esac\n")
             git.chmod(0o700)
             receipt = root / "build.jsonl"
             tool = tool_dir / "tool"

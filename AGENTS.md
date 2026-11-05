@@ -4,11 +4,13 @@
   build outputs. Follow `Strata/AGENTS.md` when editing engine code.
 - Root launchers, `deployment/`, and `compose.yaml` own deployment. `logs/`,
   `Strata-data/`, `.env`, and `.venv/` are local artifacts and must not be committed.
-- The root launchers select Project Maya v1.1.34
-  (`249f9a87d1a9d72bec2b684d704b0aa9296b1c9c`) with the existing LibertAIDAI
+- The root launchers select Project Maya v1.1.55
+  (`c4effee67cb95fb4303720919b075fddf04b4e69`) with the existing LibertAIDAI
   **1017 2.9 bpw EXL3** model at revision
   `c178a01284fc5c0e859d8668cffaac81ca8f4042`. The initial context capacity is
-  32,768; actual long-context inputs and broad model quality remain unqualified.
+  32,768; the measured local installation retains 524,288 capacity and chunk
+  4096, tested with actual inputs through 32,768 tokens. Actual 512K inputs
+  and broad model quality remain unqualified. See `docs/maya-prefill-analysis.md`.
   Never requantize pretrained weights.
 - Keep the listener on `127.0.0.1`; never expose it without an API key.
 - Keep model/pack files in the configured data directory. No automatic model

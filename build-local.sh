@@ -5,8 +5,8 @@ source "$ROOT/deployment/env.sh"
 export PATH="$ROOT/.venv/bin:$PATH"
 SOURCE="${MAYA_SOURCE_DIR:-$ROOT/Project-Maya}"
 DATA="${STRATA_DATA_DIR:-$ROOT/Strata-data}"
-ENGINE="${MAYA_ENGINE:-$DATA/builds/project-maya-249f9a87-sm120/maya-ds4}"
-if [[ "$(git -C "$SOURCE" rev-parse HEAD)" != 249f9a87d1a9d72bec2b684d704b0aa9296b1c9c ]]; then
+ENGINE="${MAYA_ENGINE:-$DATA/builds/project-maya-c4effee-sm120/maya-ds4}"
+if [[ "$(git -C "$SOURCE" rev-parse HEAD)" != c4effee67cb95fb4303720919b075fddf04b4e69 ]]; then
   echo 'Maya checkout must match the pinned revision.' >&2
   exit 1
 fi

@@ -8,7 +8,7 @@ Maya. Neither model downloads nor requantization are part of this deployment.
 
 ## Configuration
 
-- Maya v1.1.34 at `249f9a87d1a9d72bec2b684d704b0aa9296b1c9c`, with
+- Maya v1.1.55 at `c4effee67cb95fb4303720919b075fddf04b4e69`, with
   `LibertAIDAI/DeepSeek-V4.1-Flash-1017-EXL3-2.9bpw`, revision
   `c178a01284fc5c0e859d8668cffaac81ca8f4042`.
 - Two NVIDIA GPUs, layer split (`--tp 1`) with DSpark, mmap experts, vision off
@@ -17,6 +17,11 @@ Maya. Neither model downloads nor requantization are part of this deployment.
   profile.
 - The initial context capacity is **32,768**. A larger configurable capacity
   is not evidence that an actual long prompt works on this setup.
+- The measured local installation retains **524,288 capacity**, with prefill
+  chunk **4096**. Fresh 32K prompts take about **12.8 seconds** versus **66.2
+  seconds** on the old 1.1.34/512 profile. See
+  [the controlled prefill trials](docs/maya-prefill-analysis.md) for variation,
+  profiling and limits: this does not qualify an actual 512K input or broad quality.
 - Model shards and the existing Maya pack stay under `STRATA_DATA_DIR`; the
   pack indexes the existing weights rather than duplicating them.
 - Local API and browser chat: **http://127.0.0.1:8081** (Qwen keeps `:8080`).
@@ -30,7 +35,7 @@ vendored or automatically downloaded by the launchers. For a new checkout:
 git clone https://github.com/lunarmoon26/deepseek-v4.1-flash.git
 cd deepseek-v4.1-flash
 git clone https://github.com/mw00/project-maya.git Project-Maya
-git -C Project-Maya checkout --detach 249f9a87d1a9d72bec2b684d704b0aa9296b1c9c
+git -C Project-Maya checkout --detach c4effee67cb95fb4303720919b075fddf04b4e69
 python3 -m venv .venv
 .venv/bin/pip install -r deployment/requirements.txt
 cp .env.example .env
@@ -81,7 +86,10 @@ not load the model or start a server. `check.sh` checks the pinned source,
 model index, pack shard list and paths; it does not run inference. `start.sh`
 takes the shared service lock and launches Maya in the foreground. Explicit
 environment assignments override `.env` values. Rerun `install.sh` after changing
-paths, GPU order, port, `MAYA_CONTEXT` or `MAYA_SPEC=on|none`. Python defaults
+paths, GPU order, port, `MAYA_CONTEXT`, `MAYA_SPEC=on|none`, or
+`MAYA_PREFILL_CHUNK=512|1024|2048|4096` (default 512). Chunk size is independent
+of context capacity; larger chunks require measured memory and performance checks.
+Existing configurations without a chunk setting retain 512. Python defaults
 to `.venv/bin/python`; `MAYA_PYTHON` or `DS41_PYTHON` overrides it.
 
 Optional `STRATA_API_KEY` enables API authentication; keep the value in `.env`
@@ -90,6 +98,19 @@ the same key in clients. For a rebuild, `bash build-local.sh` compiles the pinne
 Maya `maya-ds4` target without loading weights or downloading a model. It uses
 `MAYA_ENGINE`'s parent directory for the build and can replace that binary. The
 optional native-GGML expert backend is disabled, matching the tested EXL3 build.
+
+## Quality evaluation
+
+[`evaluation/`](evaluation/README.md) contains the cliecy-derived harness for
+GSM8K (100), MATH-500 (50), HumanEval (50), MMLU-Pro (200), C-Eval validation
+(100), and ten tool-call smoke cases, with thinking-off/on grading and published
+reference counts. It includes explicit dataset preparation, CPU tests and
+fail-closed HumanEval containment.
+
+The evaluation target is the existing **2.9-bpw** checkpoint. Running this
+harness is separate from installation and does not automatically start a server.
+The Maya smoke checks below do not establish broad benchmark quality. Dataset
+caches, outputs and private configurations stay out of Git.
 
 ## OpenCode
 

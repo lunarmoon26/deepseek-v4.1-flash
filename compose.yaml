@@ -19,6 +19,7 @@ services:
       DS41_PORT: ${DS41_PORT:-8081}
       MAYA_CONTEXT: ${MAYA_CONTEXT:-32768}
       MAYA_SPEC: ${MAYA_SPEC:-on}
+      MAYA_PREFILL_CHUNK: ${MAYA_PREFILL_CHUNK:-512}
       STRATA_API_KEY: ${STRATA_API_KEY:-}
     devices:
       - nvidia.com/gpu=0
